@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0,2,3,4,5,6 python train.py --outdir=training-runs --cfg=blender --data=../dataset_preprocessing/chair.zip  --gpus=4 --batch=12 --gamma=0.3 --metrics None --mbstd-group 3 --cmax 256 --cbase 16384 --gen_pose_cond=True --snap 5

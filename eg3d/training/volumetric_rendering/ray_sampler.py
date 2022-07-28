@@ -15,7 +15,7 @@ Expects cam2world matrices that use the OpenCV camera coordinate system conventi
 
 import torch
 
-class RaySampler(torch.nn.Module):
+class RaySampler_(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.ray_origins_h, self.ray_directions, self.depths, self.image_coords, self.rendering_options = None, None, None, None, None
@@ -60,4 +60,91 @@ class RaySampler(torch.nn.Module):
 
         ray_origins = cam_locs_world.unsqueeze(1).repeat(1, ray_dirs.shape[1], 1)
 
+        return ray_origins, ray_dirs
+
+
+from kornia import create_meshgrid
+
+
+def get_ray_directions(H, W, focal, device):
+    """
+    Get ray directions for all pixels in camera coordinate.
+    Reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/
+               ray-tracing-generating-camera-rays/standard-coordinate-systems
+
+    Inputs:
+        H, W, focal: image height, width and focal length
+
+    Outputs:
+        directions: (H, W, 3), the direction of the rays in camera coordinate
+    """
+    grid = create_meshgrid(H, W, normalized_coordinates=False)[0]
+    i, j = grid.unbind(-1)
+    i = i.to(device)
+    j = j.to(device)
+    # the direction here is without +0.5 pixel centering as calibration is not so accurate
+    # see https://github.com/bmild/nerf/issues/24
+    directions = \
+        torch.stack([(i-W/2)/focal, -(j-H/2)/focal, -torch.ones_like(i, device=device)], -1) # (H, W, 3)
+
+    return directions
+
+
+def get_rays(directions, c2w):
+    """
+    Get ray origin and normalized directions in world coordinate for all pixels in one image.
+    Reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/
+               ray-tracing-generating-camera-rays/standard-coordinate-systems
+
+    Inputs:
+        directions: (H, W, 3) precomputed ray directions in camera coordinate
+        c2w: (3, 4) transformation matrix from camera coordinate to world coordinate
+
+    Outputs:
+        rays_o: (H*W, 3), the origin of the rays in world coordinate
+        rays_d: (H*W, 3), the normalized direction of the rays in world coordinate
+    """
+    # Rotate ray directions from camera coordinate to the world coordinate
+    rays_d = directions @ c2w[:, :3].T # (H, W, 3)
+    rays_d = rays_d / torch.norm(rays_d, dim=-1, keepdim=True)
+    # The origin of all rays is the camera origin in world coordinate
+    rays_o = c2w[:, 3].expand(rays_d.shape) # (H, W, 3)
+
+    rays_d = rays_d.view(-1, 3)
+    rays_o = rays_o.view(-1, 3)
+
+    return rays_o, rays_d
+
+
+class RaySampler(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.ray_origins_h, self.ray_directions, self.depths, self.image_coords, self.rendering_options = None, None, None, None, None
+
+
+    def forward(self, cam2world_matrix, intrinsics, resolution):
+        """
+        Create batches of rays and return origins and directions.
+
+        cam2world_matrix: (N, 4, 4)
+        intrinsics: (N, 3, 3)
+        resolution: int
+
+        ray_origins: (N, M, 3)
+        ray_dirs: (N, M, 2)
+        """
+        N, M = cam2world_matrix.shape[0], resolution**2
+        focal = intrinsics[0, 0, 0] 
+        H = resolution
+        W = resolution
+        directions = get_ray_directions(H,W,focal,device=cam2world_matrix.device)
+        ray_origins = []
+        ray_dirs = []
+        for i in range(N):
+            pose = cam2world_matrix[i,:3,:4]
+            rays_o, rays_d = get_rays(directions, pose)
+            ray_origins.append(rays_o)
+            ray_dirs.append(rays_d)
+        ray_origins = torch.stack(ray_origins)
+        ray_dirs = torch.stack(ray_dirs)
         return ray_origins, ray_dirs

@@ -329,6 +329,17 @@ def main(**kwargs):
             'avg_camera_radius': 1.7,
             'avg_camera_pivot': [0, 0, 0],
         })
+    elif opts.cfg == 'blender':
+        rendering_options.update({
+            'depth_resolution': 64,
+            'depth_resolution_importance': 64,
+            'ray_start': 2.0,
+            'ray_end': 6.0,
+            'box_warp': 1.6,
+            'white_back': True,
+            'avg_camera_radius': 1.7,
+            'avg_camera_pivot': [0, 0, 0],
+        })
     else:
         assert False, "Need to specify config"
 
