@@ -44,7 +44,10 @@ class TriPlaneGenerator(torch.nn.Module):
         self.rendering_kwargs = rendering_kwargs
     
         self._last_planes = None
-    
+        self.is_direct_triplane = False
+        if self.is_direct_triplane:
+            self.planes = torch.nn.Parameter(torch.randn([1,3,32,256,256]))
+
     def mapping(self, z, c, truncation_psi=1, truncation_cutoff=None, update_emas=False):
         if self.rendering_kwargs['c_gen_conditioning_zero']:
                 c = torch.zeros_like(c)
@@ -64,12 +67,15 @@ class TriPlaneGenerator(torch.nn.Module):
 
         # Create triplanes by running StyleGAN backbone
         N, M, _ = ray_origins.shape
-        if use_cached_backbone and self._last_planes is not None:
-            planes = self._last_planes
+        if self.is_direct_triplane:
+            planes = self.planes.repeat(N,1,1,1,1)
         else:
-            planes = self.backbone.synthesis(ws, update_emas=update_emas, **synthesis_kwargs)
-        if cache_backbone:
-            self._last_planes = planes
+            if use_cached_backbone and self._last_planes is not None:
+                planes = self._last_planes
+            else:
+                planes = self.backbone.synthesis(ws, update_emas=update_emas, **synthesis_kwargs)
+            if cache_backbone:
+                self._last_planes = planes
 
         # Reshape output into three 32-channel planes
         planes = planes.view(len(planes), 3, 32, planes.shape[-2], planes.shape[-1])
